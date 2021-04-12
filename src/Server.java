@@ -24,6 +24,8 @@ public class Server implements Runnable {
     static final String SERVER_SYNTAX_ERROR = "301 SYNTAX ERROR";
     static final String SERVER_KEY_OUT_OF_RANGE_ERROR = "303 KEY OUT OF RANGE";
 
+    static final String SERVER_LOGOUT = "106 LOGOUT";
+
     private String SERVER_CONFIRMATION;
 
     static final int TIMEOUT = 800; //1second
@@ -53,21 +55,13 @@ public class Server implements Runnable {
     private Optional<String> receive() {
         String input;
         try {
-            input = in.next();
-        } catch (NoSuchElementException e) {
-
-            try {
-                Thread.sleep(TIMEOUT);
-            } catch (InterruptedException interruptedException) {
-                interruptedException.printStackTrace();
-            }
-
-            try {
+            if (in.hasNext()) {
                 input = in.next();
-
-            } catch (NoSuchElementException e2) {
-                return Optional.empty();
+            } else {
+                input = null;
             }
+        } catch (Throwable e) {
+            return Optional.empty();
         }
 
         userInput = Optional.ofNullable(input);
@@ -88,10 +82,7 @@ public class Server implements Runnable {
             return;
         }
 
-        RobotController controller = new RobotController(
-                this::receive,
-                this::send
-        );
+        RobotController controller = new RobotController(this::receive, this::send);
 
         try {
             if (!controller.run()) {
@@ -99,9 +90,13 @@ public class Server implements Runnable {
                 return;
             }
         } catch (Throwable t) {
+            t.printStackTrace();
+
             send(SERVER_SYNTAX_ERROR);
             return;
         }
+
+        send(SERVER_LOGOUT);
     }
 
     private Boolean authenticate() {

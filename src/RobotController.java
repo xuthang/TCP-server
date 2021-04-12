@@ -8,9 +8,7 @@ public class RobotController {
     static final String SERVER_TURN_LEFT = "103 TURN LEFT";
     static final String SERVER_TURN_RIGHT = "104 TURN RIGHT";
     static final String SERVER_PICK_UP = "105 GET MESSAGE";
-    static final String SERVER_LOGOUT = "106 LOGOUT";
 
-    static final String SERVER_SYNTAX_ERROR = "301 SYNTAX ERROR";
     static final String SERVER_LOGIC_ERROR = "302 LOGIC ERROR";
 
     static final String CLIENT_RECHARGING = "RECHARGING";
@@ -81,12 +79,15 @@ public class RobotController {
     }
 
     Coordinates getPosition(String message) {
-        long spaces = message.chars().filter(ch -> ch == ' ').count();
-        if(spaces > 2)
-            throw new IllegalArgumentException("has too many spaces");
-
         String[] split = message.split(" ");
-        return new Coordinates(Integer.parseInt(split[1]), Integer.parseInt(split[2]));
+        Coordinates ret =new Coordinates(Integer.parseInt(split[1]), Integer.parseInt(split[2]));
+
+        String expectation =  "OK " + ret.xPos + " " + ret.yPos;
+        if(!message.equals(expectation))
+        {
+            throw new IllegalArgumentException("not a CLIENT_OK message, expected: |" + expectation + "| x got: |" + message + "|");
+        }
+        return ret;
     }
 
     private Boolean goTo(Coordinates goal) {
@@ -145,8 +146,11 @@ public class RobotController {
         curMessage = read.readInput();
         if (curMessage.isEmpty())
             return false;
+        if(curMessage.get().length() > 98)
+        {
+            throw new IllegalArgumentException("message is too long");
+        }
 
-        write.writeOuput(SERVER_LOGOUT);
         return true;
     }
 }
