@@ -1,6 +1,8 @@
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.net.Socket;
+import java.net.SocketException;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.Scanner;
 
@@ -15,27 +17,23 @@ public class Server implements Runnable {
     //-----------------------------------
     static final String delim = "\u0007\u0008";
 
-    private String SERVER_CONFIRMATION;
-    static final String SERVER_MOVE = "102 MOVE" + delim;
-    static final String SERVER_TURN_LEFT = "103 TURN LEFT" + delim;
-    static final String SERVER_TURN_RIGHT = "104 TURN RIGHT" + delim;
-    static final String SERVER_PICK_UP = "105 GET MESSAGE" + delim;
-    static final String SERVER_LOGOUT = "106 LOGOUT" + delim;
-    static final String SERVER_KEY_REQUEST = "107 KEY REQUEST" + delim;
-    static final String SERVER_OK = "200 OK" + delim;
-    static final String SERVER_LOGIN_FAILED = "300 LOGIN FAILED" + delim;
-    static final String SERVER_SYNTAX_ERROR = "301 SYNTAX ERROR" + delim;
-    static final String SERVER_LOGIC_ERROR = "302 LOGIC ERROR" + delim;
-    static final String SERVER_KEY_OUT_OF_RANGE_ERROR = "303 KEY OUT OF RANGE" + delim;
+    static final String SERVER_KEY_REQUEST = "107 KEY REQUEST";
+    static final String SERVER_OK = "200 OK";
 
-    static final String CLIENT_RECHARGING = "RECHARGING" + delim;
-    static final String CLIENT_FULL_POWER = "FULL POWER" + delim;
+    static final String SERVER_LOGIN_FAILED = "300 LOGIN FAILED";
+    static final String SERVER_SYNTAX_ERROR = "301 SYNTAX ERROR";
+    static final String SERVER_KEY_OUT_OF_RANGE_ERROR = "303 KEY OUT OF RANGE";
+
+    private String SERVER_CONFIRMATION;
+
+    static final int TIMEOUT = 800; //1second
+    static final int TIMEOUT_RECHARGING = 5000;//5seconds
 
     //-----------------------------------
 
     public Server(Socket clientSocket) throws IOException {
         this.clientSocket = clientSocket;
-        //this.clientSocket.setSoTimeout(500);
+        this.clientSocket.setSoTimeout(TIMEOUT);
         this.in = new Scanner(this.clientSocket.getInputStream()).useDelimiter(delim);
         this.out = new PrintWriter(this.clientSocket.getOutputStream(), true);
         this.keys = new Keys();
@@ -46,26 +44,37 @@ public class Server implements Runnable {
     }
 
     private void send(String message) {
+        message = message + delim;
         System.out.println("<-- |" + toPrintable(message) + "|");
         out.write(message);
         out.flush();
     }
 
     private Optional<String> receive() {
-        if (!in.hasNext()) {
+        String input;
+        try {
+            input = in.next();
+        } catch (NoSuchElementException e) {
+
             try {
-                Thread.sleep(500);
-            } catch (InterruptedException e) {
-                return userInput = Optional.empty();
+                Thread.sleep(TIMEOUT);
+            } catch (InterruptedException interruptedException) {
+                interruptedException.printStackTrace();
+            }
+
+            try {
+                input = in.next();
+
+            } catch (NoSuchElementException e2) {
+                return Optional.empty();
             }
         }
 
-        if (!in.hasNext())
-            return userInput = Optional.empty();
-
-        userInput = Optional.ofNullable(in.next());
-        if (!userInput.isEmpty())
+        userInput = Optional.ofNullable(input);
+        if (userInput.isPresent())
             System.out.println("--> |" + toPrintable(userInput.get()) + "|");
+        else
+            System.out.println("--> didn't receive anything");
 
         return userInput;
     }
@@ -79,11 +88,28 @@ public class Server implements Runnable {
             return;
         }
 
+        RobotController controller = new RobotController(
+                this::receive,
+                this::send
+        );
+
+        try {
+            if (!controller.run()) {
+                System.out.println("ending connection...");
+                return;
+            }
+        } catch (Throwable t) {
+            send(SERVER_SYNTAX_ERROR);
+            return;
+        }
     }
 
     private Boolean authenticate() {
-        receive();
-        if (userInput.isEmpty() || userInput.get().length() > 18) {
+        if (receive().isEmpty()) {
+            return false;
+        }
+        if (userInput.get().length() > 18) {
+            send(SERVER_SYNTAX_ERROR);
             return false;
         }
         this.username = userInput.get();
@@ -93,36 +119,57 @@ public class Server implements Runnable {
         if (receive().isEmpty()) {
             return false;
         }
-        int ID = Integer.parseInt(userInput.get());
+        int ID;
+        try {
+            ID = Integer.parseInt(userInput.get());
+        } catch (final NumberFormatException e) {
+            send(SERVER_SYNTAX_ERROR);
+            return false;
+        }
+        if (ID >= keys.getSize() || ID < 0) {
+            send(SERVER_KEY_OUT_OF_RANGE_ERROR);
+            return false;
+        }
 
         int hash = calcHash(username, keys.getServerKey(ID));
-        SERVER_CONFIRMATION = Integer.toString(hash) + delim;
+        SERVER_CONFIRMATION = Integer.toString(hash);
         send(SERVER_CONFIRMATION);
 
         if (receive().isEmpty()) {
             return false;
         }
 
-        hash = calcHash(username, keys.getClientKey(ID));
-        if(Integer.parseInt(userInput.get()) != hash)
-        {
+        if (userInput.get().length() > 5) {
+            send(SERVER_SYNTAX_ERROR);
+            return false;
+        }
+
+        int result;
+        try {
+            result = Integer.parseInt(userInput.get());
+        } catch (final NumberFormatException e) {
+            send(SERVER_SYNTAX_ERROR);
+            return false;
+        }
+
+        if (result != calcHash(username, keys.getClientKey(ID))) {
             send(SERVER_LOGIN_FAILED);
             return false;
         }
 
         send(SERVER_OK);
 
-        return false;
+        return true;
     }
 
-    private int calcHash(String string, int add)
-    {
+    private int calcHash(String string, int add) {
         int ret = 0;
-        for (char ch: string.toCharArray())
-            ret += (int)ch;
+        for (char ch : string.toCharArray())
+            ret += ch;
 
         ret = (ret * 1000) % 65536;
 
-        return (ret + add)% 65536;
+        return (ret + add) % 65536;
     }
+
 }
