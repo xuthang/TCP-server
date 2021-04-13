@@ -1,4 +1,5 @@
 import java.io.PrintWriter;
+import java.net.SocketException;
 import java.util.Optional;
 import java.util.Scanner;
 import java.util.concurrent.Callable;
@@ -10,10 +11,6 @@ public class RobotController {
     static final String SERVER_TURN_RIGHT = "104 TURN RIGHT";
     static final String SERVER_PICK_UP = "105 GET MESSAGE";
 
-    static final String SERVER_LOGIC_ERROR = "302 LOGIC ERROR";
-
-    static final String CLIENT_RECHARGING = "RECHARGING";
-    static final String CLIENT_FULL_POWER = "FULL POWER";
 
     ReadInput read;
     WriteOutput write;
@@ -27,13 +24,13 @@ public class RobotController {
         this.write = write;
     }
 
-    public void run() throws TimeoutException, IllegalArgumentException {
+    public void run() throws TimeoutException, IllegalStateException, SocketException, IllegalArgumentException {
         figureOutStartPosition();
         goTo(new Coordinates(0, 0));
         pickUp();
     }
 
-    void figureOutStartPosition() throws TimeoutException, IllegalArgumentException {
+    void figureOutStartPosition() throws TimeoutException, IllegalStateException, SocketException, IllegalArgumentException {
         //gets current position
         write.writeOuput(SERVER_TURN_LEFT);
         curMessage = read.readInput();
@@ -80,39 +77,96 @@ public class RobotController {
         return ret;
     }
 
-    private void goTo(Coordinates goal) throws TimeoutException, IllegalArgumentException {
+    private void goTo(Coordinates goal) throws TimeoutException, IllegalStateException, SocketException, IllegalArgumentException {
         while (!curPos.equals(goal)) {
             if (curPos.xPos > goal.xPos) {
-                if (!go(DIRECTION.LEFT))
-                    return;
+                if (!go(DIRECTION.LEFT)) {
+                    // need to go left but immediate left is blocked
+                    if (curPos.xPos - 1 == goal.xPos) {
+                        if (curPos.yPos > goal.yPos) {
+                            go(DIRECTION.DOWN);
+                        } else {
+                            go(DIRECTION.UP);
+                        }
+                        go(DIRECTION.LEFT);
+                    } else {
+                        go(DIRECTION.DOWN);
+                        go(DIRECTION.LEFT);
+                        go(DIRECTION.LEFT);
+                        go(DIRECTION.UP);
+                    }
+                }
             } else if (curPos.xPos < goal.xPos) {
-                if (!go(DIRECTION.RIGHT))
-                    return;
+                if (!go(DIRECTION.RIGHT)) {
+                    // need to go right but immediate right is blocked
+                    if (curPos.xPos + 1 == goal.xPos) {
+                        if (curPos.yPos > goal.yPos) {
+                            go(DIRECTION.DOWN);
+                        } else {
+                            go(DIRECTION.UP);
+                        }
+                        go(DIRECTION.RIGHT);
+                    } else {
+                        go(DIRECTION.DOWN);
+                        go(DIRECTION.RIGHT);
+                        go(DIRECTION.RIGHT);
+                        go(DIRECTION.UP);
+                    }
+                }
             } else if (curPos.yPos > goal.yPos) {
-                if (!go(DIRECTION.DOWN))
-                    return;
+                if (!go(DIRECTION.DOWN)) //TRY TO GO DOWN
+                {
+                    if (curPos.yPos - 1 == goal.yPos) {
+                        if (curPos.xPos > goal.xPos) {
+                            go(DIRECTION.LEFT);
+                        } else {
+                            go(DIRECTION.RIGHT);
+                        }
+                        go(DIRECTION.DOWN); //GO DOWN BY 1 BUT ALSO 1 TO THE SIDE
+                    } else { //GO DOWN BY 2
+                        go(DIRECTION.LEFT);
+                        go(DIRECTION.DOWN);
+                        go(DIRECTION.DOWN);
+                        go(DIRECTION.RIGHT);
+                    }
+                }
             } else if (curPos.yPos < goal.yPos) {
-                if (!go(DIRECTION.UP))
-                    return;
+                if (!go(DIRECTION.UP)) //TRY TO GO UP BY 1
+                {
+                    if (curPos.yPos + 1 == goal.yPos) {
+                        if (curPos.xPos > goal.xPos) {
+                            go(DIRECTION.LEFT);
+                        } else {
+                            go(DIRECTION.RIGHT);
+                        }
+                        go(DIRECTION.UP); //UP BY 1 BUT THE OBSTACLE IS NOW ON THE LEFT OR THE RIGHT
+                    } else { //GO UP BY 2
+                        go(DIRECTION.LEFT);
+                        go(DIRECTION.UP);
+                        go(DIRECTION.UP);
+                        go(DIRECTION.RIGHT);
+                    }
+                }
             }
         }
     }
 
-    private Boolean go(DIRECTION dir) throws TimeoutException, IllegalArgumentException  {
+
+    private Boolean go(DIRECTION dir) throws TimeoutException, IllegalStateException, SocketException, IllegalArgumentException {
         while (dir != curDir) {
             spinLeft();
         }
         return goForwards();
     }
 
-    private void spinLeft() throws TimeoutException, IllegalArgumentException {
+    private void spinLeft() throws TimeoutException, IllegalStateException, SocketException, IllegalArgumentException {
         write.writeOuput(SERVER_TURN_LEFT);
         curMessage = read.readInput();
         Coordinates tmp = getPosition(curMessage);
         curDir = DIRECTION.nextDirection(curDir, DIRECTION.LEFT);
     }
 
-    private Boolean goForwards() throws TimeoutException, IllegalArgumentException {
+    private Boolean goForwards() throws TimeoutException, IllegalStateException, SocketException, IllegalArgumentException {
         write.writeOuput(SERVER_MOVE);
         curMessage = read.readInput();
         Coordinates nextPos = getPosition(curMessage);
@@ -124,7 +178,7 @@ public class RobotController {
         return true;
     }
 
-    private void pickUp() throws TimeoutException, IllegalArgumentException{
+    private void pickUp() throws TimeoutException, IllegalStateException, SocketException, IllegalArgumentException {
         write.writeOuput(SERVER_PICK_UP);
         curMessage = read.readInput();
         if (curMessage.length() > 98) {

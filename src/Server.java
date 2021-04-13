@@ -29,6 +29,10 @@ public class Server implements Runnable {
 
     private String SERVER_CONFIRMATION;
 
+    static final String CLIENT_RECHARGING = "RECHARGING";
+    static final String CLIENT_FULL_POWER = "FULL POWER";
+    static final String SERVER_LOGIC_ERROR = "302 LOGIC ERROR";
+
     static final int TIMEOUT = 800; //1second
     static final int TIMEOUT_RECHARGING = 5000;//5seconds
 
@@ -53,22 +57,35 @@ public class Server implements Runnable {
         out.flush();
     }
 
-    private String receive() throws TimeoutException {
-        String input;
+    private String receive() throws TimeoutException, IllegalStateException, SocketException {
+        userInput = read();
+
+        if (userInput.equals(CLIENT_RECHARGING)) {
+            this.clientSocket.setSoTimeout(TIMEOUT_RECHARGING);
+            userInput = read();
+            if (!userInput.equals(CLIENT_FULL_POWER))
+                throw new IllegalStateException("robot is supposed to be full power");
+
+            this.clientSocket.setSoTimeout(TIMEOUT);
+            userInput = read();
+        }
+
+
+        return userInput;
+    }
+
+    private String read() throws TimeoutException {
         try {
             if (in.hasNext()) {
-                input = in.next();
+                String ret = in.next();
+                System.out.println("received --> |" + toPrintable(ret) + "|");
+                return ret;
             } else {
                 throw new TimeoutException("no new message");
             }
         } catch (Throwable e) {
             throw new TimeoutException("no new message");
         }
-
-        userInput = input;
-        System.out.println("received --> |" + toPrintable(userInput) + "|");
-
-        return userInput;
     }
 
     @Override
@@ -80,33 +97,46 @@ public class Server implements Runnable {
                 System.out.println("authentication failed, ending connection...");
                 return;
             }
-        } catch (TimeoutException e) {
+        } catch (TimeoutException | SocketException e) {
             System.out.println("timed out, ending connection...");
             return;
-        } catch (NumberFormatException n) {
+        } catch (IllegalStateException e) {
+            e.printStackTrace();
+            send(SERVER_LOGIC_ERROR);
+            System.out.println("logic error, ending connection...");
+            return;
+        } catch (IllegalArgumentException e) {
+            e.printStackTrace();
             send(SERVER_SYNTAX_ERROR);
             System.out.println("syntax error, ending connection...");
             return;
         }
+
 
         RobotController controller = new RobotController(this::receive, this::send);
 
         try {
             controller.run();
 
-        } catch (IllegalArgumentException n) {
+        }  catch (TimeoutException | SocketException e) {
+            System.out.println("timed out, ending connection...");
+            return;
+        } catch (IllegalStateException e) {
+            e.printStackTrace();
+            send(SERVER_LOGIC_ERROR);
+            System.out.println("logic error, ending connection...");
+            return;
+        } catch (IllegalArgumentException e) {
+            e.printStackTrace();
             send(SERVER_SYNTAX_ERROR);
             System.out.println("syntax error, ending connection...");
-            return;
-        } catch (TimeoutException t) {
-            System.out.println("timed out, ending connection...");
             return;
         }
 
         send(SERVER_LOGOUT);
     }
 
-    private Boolean authenticate() throws TimeoutException, NumberFormatException {
+    private Boolean authenticate() throws TimeoutException, IllegalStateException, SocketException, NumberFormatException {
         receive();
 
         if (userInput.length() > 18) {

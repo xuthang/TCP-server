@@ -1,6 +1,7 @@
+import java.net.SocketException;
 import java.util.Optional;
 import java.util.concurrent.TimeoutException;
 
 public interface ReadInput {
-    String readInput() throws TimeoutException;
+    String readInput() throws TimeoutException, IllegalStateException, SocketException;
 }
