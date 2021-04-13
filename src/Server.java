@@ -57,31 +57,44 @@ public class Server implements Runnable {
         out.flush();
     }
 
-    private String receive() throws TimeoutException, IllegalStateException, SocketException {
-        userInput = read();
+    private String receive() throws TimeoutException, IllegalStateException, IllegalArgumentException, SocketException {
+        return receive(-1);
+    }
+
+    private String receive(int maxLength) throws TimeoutException, IllegalStateException, SocketException {
+        userInput = read(maxLength);
 
         if (userInput.equals(CLIENT_RECHARGING)) {
             this.clientSocket.setSoTimeout(TIMEOUT_RECHARGING);
-            userInput = read();
+            userInput = read(CLIENT_FULL_POWER.length());
             if (!userInput.equals(CLIENT_FULL_POWER))
                 throw new IllegalStateException("robot is supposed to be full power");
 
             this.clientSocket.setSoTimeout(TIMEOUT);
-            userInput = read();
+            userInput = read(maxLength);
         }
 
         return userInput;
     }
 
-    private String read() throws TimeoutException {
+    private String read(int maxLength) throws TimeoutException, IllegalArgumentException {
         try {
-            if (in.hasNext()) {
-                String ret = in.next();
-                System.out.println("received --> |" + toPrintable(ret) + "|");
-                return ret;
-            } else {
-                throw new TimeoutException("no new message");
+            String ret = "";
+            boolean breakout = false;
+
+            while (!breakout) {
+                breakout = in.hasNext() && !in.hasNext(".*\\z");
+
+                ret += in.next();
+                if (maxLength != -1 && ret.length() > maxLength)
+                    throw new IllegalArgumentException("input too long");
             }
+
+            System.out.println("received --> |" + toPrintable(ret) + "|");
+            return ret;
+
+        } catch (IllegalArgumentException e) {
+            throw e;
         } catch (Throwable e) {
             throw new TimeoutException("no new message");
         }
@@ -117,7 +130,7 @@ public class Server implements Runnable {
         try {
             controller.run();
 
-        }  catch (TimeoutException | SocketException e) {
+        } catch (TimeoutException | SocketException e) {
             System.out.println("timed out, ending connection...");
             return;
         } catch (IllegalStateException e) {
@@ -135,13 +148,8 @@ public class Server implements Runnable {
         send(SERVER_LOGOUT);
     }
 
-    private Boolean authenticate() throws TimeoutException, IllegalStateException, SocketException, NumberFormatException {
-        receive();
-
-        if (userInput.length() > 18) {
-            send(SERVER_SYNTAX_ERROR);
-            return false;
-        }
+    private Boolean authenticate() throws TimeoutException, IllegalStateException, SocketException, IllegalArgumentException {
+        receive(18);
         this.username = userInput;
 
         send(SERVER_KEY_REQUEST);
@@ -157,10 +165,7 @@ public class Server implements Runnable {
         SERVER_CONFIRMATION = Integer.toString(hash);
         send(SERVER_CONFIRMATION);
 
-        receive();
-        if (userInput.length() > 5) {
-            throw new NumberFormatException("ID length > 5");
-        }
+        receive(5);
         int result = Integer.parseInt(userInput);
         if (result != calcHash(username, keys.getClientKey(ID))) {
             send(SERVER_LOGIN_FAILED);

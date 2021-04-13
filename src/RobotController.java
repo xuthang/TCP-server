@@ -32,7 +32,7 @@ public class RobotController {
     void figureOutStartPosition() throws TimeoutException, IllegalStateException, SocketException, IllegalArgumentException {
         //gets current position
         write.writeOuput(SERVER_TURN_LEFT);
-        curMessage = read.readInput();
+        curMessage = read.readInput(10);
         curPos = getPosition(curMessage); //parses and checks the message
 
         //calculate what direction the robot is facing
@@ -40,11 +40,11 @@ public class RobotController {
         //try to move into any direction to calculate difference between current and next position
         for (int i = 0; i < 4; i++) {
             write.writeOuput(SERVER_TURN_LEFT);
-            curMessage = read.readInput();
+            curMessage = read.readInput(10);
             Coordinates next = getPosition(curMessage); //parses to check for correctness
 
             write.writeOuput(SERVER_MOVE);
-            curMessage = read.readInput();
+            curMessage = read.readInput(10);
             nextPos = getPosition(curMessage);
 
             if (!nextPos.equals(curPos))
@@ -67,8 +67,7 @@ public class RobotController {
 
     Coordinates getPosition(String message) throws IllegalArgumentException {
         String[] split = message.split(" ");
-        if(split.length < 2)
-        {
+        if (split.length < 2) {
             throw new IllegalArgumentException("not a CLIENT_OK message, got: |" + message + "|");
         }
 
@@ -165,14 +164,14 @@ public class RobotController {
 
     private void spinLeft() throws TimeoutException, IllegalStateException, SocketException, IllegalArgumentException {
         write.writeOuput(SERVER_TURN_LEFT);
-        curMessage = read.readInput();
+        curMessage = read.readInput(10);
         Coordinates tmp = getPosition(curMessage);
         curDir = DIRECTION.nextDirection(curDir, DIRECTION.LEFT);
     }
 
     private Boolean goForwards() throws TimeoutException, IllegalStateException, SocketException, IllegalArgumentException {
         write.writeOuput(SERVER_MOVE);
-        curMessage = read.readInput();
+        curMessage = read.readInput(10);
         Coordinates nextPos = getPosition(curMessage);
 
         if (nextPos.equals(curPos))
@@ -184,9 +183,6 @@ public class RobotController {
 
     private void pickUp() throws TimeoutException, IllegalStateException, SocketException, IllegalArgumentException {
         write.writeOuput(SERVER_PICK_UP);
-        curMessage = read.readInput();
-        if (curMessage.length() > 98) {
-            throw new IllegalArgumentException("message is too long");
-        }
+        curMessage = read.readInput(98);
     }
 }
