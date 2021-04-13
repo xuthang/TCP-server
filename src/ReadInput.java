@@ -1,5 +1,6 @@
 import java.util.Optional;
+import java.util.concurrent.TimeoutException;
 
 public interface ReadInput {
-    Optional<String> readInput();
+    String readInput() throws TimeoutException;
 }

@@ -5,12 +5,13 @@ import java.net.SocketException;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.Scanner;
+import java.util.concurrent.TimeoutException;
 
 public class Server implements Runnable {
     private Socket clientSocket;
     private Scanner in;
     private PrintWriter out;
-    private Optional<String> userInput;
+    private String userInput;
 
     private Keys keys;
     private String username;
@@ -47,28 +48,25 @@ public class Server implements Runnable {
 
     private void send(String message) {
         message = message + delim;
-        System.out.println("<-- |" + toPrintable(message) + "|");
+        System.out.println("<-- sending |" + toPrintable(message) + "|");
         out.write(message);
         out.flush();
     }
 
-    private Optional<String> receive() {
+    private String receive() throws TimeoutException {
         String input;
         try {
             if (in.hasNext()) {
                 input = in.next();
             } else {
-                input = null;
+                throw new TimeoutException("no new message");
             }
         } catch (Throwable e) {
-            return Optional.empty();
+            throw new TimeoutException("no new message");
         }
 
-        userInput = Optional.ofNullable(input);
-        if (userInput.isPresent())
-            System.out.println("--> |" + toPrintable(userInput.get()) + "|");
-        else
-            System.out.println("--> didn't receive anything");
+        userInput = input;
+        System.out.println("received --> |" + toPrintable(userInput) + "|");
 
         return userInput;
     }
@@ -77,50 +75,50 @@ public class Server implements Runnable {
     public void run() {
         System.out.println("new client connected...");
 
-        if (!authenticate()) {
-            System.out.println("ending connection...");
+        try {
+            if (!authenticate()) {
+                System.out.println("authentication failed, ending connection...");
+                return;
+            }
+        } catch (TimeoutException e) {
+            System.out.println("timed out, ending connection...");
+            return;
+        } catch (NumberFormatException n) {
+            send(SERVER_SYNTAX_ERROR);
+            System.out.println("syntax error, ending connection...");
             return;
         }
 
         RobotController controller = new RobotController(this::receive, this::send);
 
         try {
-            if (!controller.run()) {
-                System.out.println("ending connection...");
-                return;
-            }
-        } catch (Throwable t) {
-            t.printStackTrace();
+            controller.run();
 
+        } catch (IllegalArgumentException n) {
             send(SERVER_SYNTAX_ERROR);
+            System.out.println("syntax error, ending connection...");
+            return;
+        } catch (TimeoutException t) {
+            System.out.println("timed out, ending connection...");
             return;
         }
 
         send(SERVER_LOGOUT);
     }
 
-    private Boolean authenticate() {
-        if (receive().isEmpty()) {
-            return false;
-        }
-        if (userInput.get().length() > 18) {
+    private Boolean authenticate() throws TimeoutException, NumberFormatException {
+        receive();
+
+        if (userInput.length() > 18) {
             send(SERVER_SYNTAX_ERROR);
             return false;
         }
-        this.username = userInput.get();
+        this.username = userInput;
 
         send(SERVER_KEY_REQUEST);
 
-        if (receive().isEmpty()) {
-            return false;
-        }
-        int ID;
-        try {
-            ID = Integer.parseInt(userInput.get());
-        } catch (final NumberFormatException e) {
-            send(SERVER_SYNTAX_ERROR);
-            return false;
-        }
+        receive();
+        int ID = Integer.parseInt(userInput);
         if (ID >= keys.getSize() || ID < 0) {
             send(SERVER_KEY_OUT_OF_RANGE_ERROR);
             return false;
@@ -130,23 +128,11 @@ public class Server implements Runnable {
         SERVER_CONFIRMATION = Integer.toString(hash);
         send(SERVER_CONFIRMATION);
 
-        if (receive().isEmpty()) {
-            return false;
+        receive();
+        if (userInput.length() > 5) {
+            throw new NumberFormatException("ID length > 5");
         }
-
-        if (userInput.get().length() > 5) {
-            send(SERVER_SYNTAX_ERROR);
-            return false;
-        }
-
-        int result;
-        try {
-            result = Integer.parseInt(userInput.get());
-        } catch (final NumberFormatException e) {
-            send(SERVER_SYNTAX_ERROR);
-            return false;
-        }
-
+        int result = Integer.parseInt(userInput);
         if (result != calcHash(username, keys.getClientKey(ID))) {
             send(SERVER_LOGIN_FAILED);
             return false;

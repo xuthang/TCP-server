@@ -2,6 +2,7 @@ import java.io.PrintWriter;
 import java.util.Optional;
 import java.util.Scanner;
 import java.util.concurrent.Callable;
+import java.util.concurrent.TimeoutException;
 
 public class RobotController {
     static final String SERVER_MOVE = "102 MOVE";
@@ -16,7 +17,7 @@ public class RobotController {
 
     ReadInput read;
     WriteOutput write;
-    Optional<String> curMessage;
+    String curMessage;
 
     Coordinates curPos;
     DIRECTION curDir;
@@ -26,114 +27,96 @@ public class RobotController {
         this.write = write;
     }
 
-    public Boolean run() {
-        if (!figureOutStartPosition())
-            return false;
-
-        if (!goTo(new Coordinates(0, 0)))
-            return false;
-
-        return pickUp();
+    public void run() throws TimeoutException, IllegalArgumentException {
+        figureOutStartPosition();
+        goTo(new Coordinates(0, 0));
+        pickUp();
     }
 
-    Boolean figureOutStartPosition() {
-
+    void figureOutStartPosition() throws TimeoutException, IllegalArgumentException {
         //gets current position
         write.writeOuput(SERVER_TURN_LEFT);
         curMessage = read.readInput();
-        if (curMessage.isEmpty())
-            return false;
-        curPos = getPosition(curMessage.get());
+        curPos = getPosition(curMessage);
 
         //calculate what direction the robot is facing
         Coordinates nextPos = curPos;
+        //try to move into any direction to calculate difference between current and next position
         for (int i = 0; i < 4; i++) {
             write.writeOuput(SERVER_TURN_LEFT);
             curMessage = read.readInput();
-            if (curMessage.isEmpty())
-                return false;
+            Coordinates next = getPosition(curMessage); //parses to check for correctness
 
             write.writeOuput(SERVER_MOVE);
             curMessage = read.readInput();
-            if (curMessage.isEmpty())
-                return false;
-            nextPos = getPosition(curMessage.get());
+            nextPos = getPosition(curMessage);
 
             if (!nextPos.equals(curPos))
                 break;
         }
 
-        if (nextPos.xPos > curPos.xPos)
+        if (nextPos.xPos > curPos.xPos) {
             curDir = DIRECTION.RIGHT;
-        else if (nextPos.xPos < curPos.xPos)
+        } else if (nextPos.xPos < curPos.xPos) {
             curDir = DIRECTION.LEFT;
-        else if (nextPos.yPos > curPos.yPos)
+        } else if (nextPos.yPos > curPos.yPos) {
             curDir = DIRECTION.UP;
-        else if (nextPos.yPos < curPos.yPos)
+        } else if (nextPos.yPos < curPos.yPos) {
             curDir = DIRECTION.DOWN;
-        else
-            return false;//boxed robot???
-
+        } else {
+            throw new IllegalArgumentException("boxed robot, he cant move!!!");
+        }
         curPos = nextPos;
-        return true;
     }
 
-    Coordinates getPosition(String message) {
+    Coordinates getPosition(String message) throws IllegalArgumentException {
         String[] split = message.split(" ");
-        Coordinates ret =new Coordinates(Integer.parseInt(split[1]), Integer.parseInt(split[2]));
+        Coordinates ret = new Coordinates(Integer.parseInt(split[1]), Integer.parseInt(split[2])); //parsing can fail
 
-        String expectation =  "OK " + ret.xPos + " " + ret.yPos;
-        if(!message.equals(expectation))
-        {
+        String expectation = "OK " + ret.xPos + " " + ret.yPos;
+        if (!message.equals(expectation)) {
             throw new IllegalArgumentException("not a CLIENT_OK message, expected: |" + expectation + "| x got: |" + message + "|");
         }
         return ret;
     }
 
-    private Boolean goTo(Coordinates goal) {
+    private void goTo(Coordinates goal) throws TimeoutException, IllegalArgumentException {
         while (!curPos.equals(goal)) {
             if (curPos.xPos > goal.xPos) {
                 if (!go(DIRECTION.LEFT))
-                    return false;
+                    return;
             } else if (curPos.xPos < goal.xPos) {
                 if (!go(DIRECTION.RIGHT))
-                    return false;
+                    return;
             } else if (curPos.yPos > goal.yPos) {
                 if (!go(DIRECTION.DOWN))
-                    return false;
+                    return;
             } else if (curPos.yPos < goal.yPos) {
                 if (!go(DIRECTION.UP))
-                    return false;
+                    return;
             }
         }
-        return true;
     }
 
-    private Boolean go(DIRECTION dir) {
+    private Boolean go(DIRECTION dir) throws TimeoutException, IllegalArgumentException  {
         while (dir != curDir) {
-            if (!spinLeft())
-                return false;
+            spinLeft();
         }
         return goForwards();
     }
 
-    private Boolean spinLeft() {
+    private void spinLeft() throws TimeoutException, IllegalArgumentException {
         write.writeOuput(SERVER_TURN_LEFT);
         curMessage = read.readInput();
-        if (curMessage.isEmpty())
-            return false;
-
+        Coordinates tmp = getPosition(curMessage);
         curDir = DIRECTION.nextDirection(curDir, DIRECTION.LEFT);
-        return true;
     }
 
-    private Boolean goForwards() {
+    private Boolean goForwards() throws TimeoutException, IllegalArgumentException {
         write.writeOuput(SERVER_MOVE);
         curMessage = read.readInput();
-        if (curMessage.isEmpty())
-            return false;
+        Coordinates nextPos = getPosition(curMessage);
 
-        Coordinates nextPos = getPosition(curMessage.get());
         if (nextPos.equals(curPos))
             return false;
 
@@ -141,16 +124,11 @@ public class RobotController {
         return true;
     }
 
-    private Boolean pickUp() {
+    private void pickUp() throws TimeoutException, IllegalArgumentException{
         write.writeOuput(SERVER_PICK_UP);
         curMessage = read.readInput();
-        if (curMessage.isEmpty())
-            return false;
-        if(curMessage.get().length() > 98)
-        {
+        if (curMessage.length() > 98) {
             throw new IllegalArgumentException("message is too long");
         }
-
-        return true;
     }
 }
