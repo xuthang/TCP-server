@@ -70,7 +70,6 @@ public class Server implements Runnable {
             userInput = read();
         }
 
-
         return userInput;
     }
 

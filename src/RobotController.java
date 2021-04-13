@@ -11,7 +11,6 @@ public class RobotController {
     static final String SERVER_TURN_RIGHT = "104 TURN RIGHT";
     static final String SERVER_PICK_UP = "105 GET MESSAGE";
 
-
     ReadInput read;
     WriteOutput write;
     String curMessage;
@@ -34,7 +33,7 @@ public class RobotController {
         //gets current position
         write.writeOuput(SERVER_TURN_LEFT);
         curMessage = read.readInput();
-        curPos = getPosition(curMessage);
+        curPos = getPosition(curMessage); //parses and checks the message
 
         //calculate what direction the robot is facing
         Coordinates nextPos = curPos;
@@ -68,6 +67,11 @@ public class RobotController {
 
     Coordinates getPosition(String message) throws IllegalArgumentException {
         String[] split = message.split(" ");
+        if(split.length < 2)
+        {
+            throw new IllegalArgumentException("not a CLIENT_OK message, got: |" + message + "|");
+        }
+
         Coordinates ret = new Coordinates(Integer.parseInt(split[1]), Integer.parseInt(split[2])); //parsing can fail
 
         String expectation = "OK " + ret.xPos + " " + ret.yPos;
